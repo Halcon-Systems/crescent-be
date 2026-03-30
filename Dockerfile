@@ -1,21 +1,22 @@
-# Use official Node.js LTS image
-FROM node:18-alpine
 
-# Set working directory
+
+# ---------- Build Stage ----------
+FROM node:18-alpine AS builder
 WORKDIR /usr/src/app
-
-# Copy package files and install dependencies
+RUN apk add --no-cache openssl
 COPY package*.json ./
-RUN npm install --production
-
-# Copy the rest of the application code
+RUN npm install
 COPY . .
-
-# Build the app (if using TypeScript)
 RUN npm run build
 
-# Expose the application port (default NestJS port)
+# ---------- Production Stage ----------
+FROM node:18-alpine AS production
+WORKDIR /usr/src/app
+RUN apk add --no-cache openssl
+COPY package*.json ./
+RUN npm install --omit=dev
+COPY --from=builder /usr/src/app/dist ./dist
+COPY --from=builder /usr/src/app/node_modules ./node_modules
+COPY --from=builder /usr/src/app/prisma ./prisma
 EXPOSE 3000
-
-# Start the application
 CMD ["node", "dist/main.js"]
