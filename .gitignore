@@ -12,7 +12,6 @@ dist/
 dist/*
 # TypeScript
 *.tsbuildinfo
-.env
 
 
 # Environment files
