@@ -21,7 +21,7 @@ import {
   CreateReturnDto,
   CreateStoreDto,
   CreateTransferDto,
-  CreateVendorDto,
+  CreateInventoryVendorDto,
   InventoryCardQueryDto,
   ReportQueryDto,
   UpdateCategoryDto,
@@ -34,7 +34,7 @@ import {
   UpdateReturnDto,
   UpdateStoreDto,
   UpdateTransferDto,
-  UpdateVendorDto,
+  UpdateInventoryVendorDto,
 } from './dto/inventory.dto';
 
 @Injectable()
@@ -177,7 +177,7 @@ export class InventoryService {
   }
 
   // setup - vendors
-  createVendor(dto: CreateVendorDto) {
+  createVendor(dto: CreateInventoryVendorDto) {
     return this.prisma.invVendor.create({
       data: {
         vendorName: dto.vendorName,
@@ -197,7 +197,7 @@ export class InventoryService {
     if (!row) throw new NotFoundException(`Vendor ${vendorId} not found`);
     return row;
   }
-  async updateVendor(vendorId: number, dto: UpdateVendorDto) {
+  async updateVendor(vendorId: number, dto: UpdateInventoryVendorDto) {
     await this.getVendor(vendorId);
     return this.prisma.invVendor.update({ where: { vendorId }, data: dto });
   }

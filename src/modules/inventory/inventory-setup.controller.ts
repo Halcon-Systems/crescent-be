@@ -17,11 +17,11 @@ import {
   CreateCategoryDto,
   CreateGroupDto,
   CreateStoreDto,
-  CreateVendorDto,
+  CreateInventoryVendorDto,
   UpdateCategoryDto,
   UpdateGroupDto,
   UpdateStoreDto,
-  UpdateVendorDto,
+  UpdateInventoryVendorDto,
 } from './dto/inventory.dto';
 import { PermissionsGuard } from '../rbac/permissions.guard';
 import { InventoryService } from './inventory.service';
@@ -136,7 +136,7 @@ export class InventorySetupController {
 
   @Post('inventory-vendors')
   @RequirePermissions('inventory.vendors.create')
-  createVendor(@Body() dto: CreateVendorDto) {
+  createVendor(@Body() dto: CreateInventoryVendorDto) {
     return this.inventory.createVendor(dto);
   }
 
@@ -148,7 +148,7 @@ export class InventorySetupController {
 
   @Put('inventory-vendors/:id')
   @RequirePermissions('inventory.vendors.edit')
-  updateVendor(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateVendorDto) {
+  updateVendor(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateInventoryVendorDto) {
     return this.inventory.updateVendor(id, dto);
   }
 

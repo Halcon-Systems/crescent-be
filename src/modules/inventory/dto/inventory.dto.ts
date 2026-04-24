@@ -80,7 +80,7 @@ export class CreateGroupDto {
 
 export class UpdateGroupDto extends CreateGroupDto {}
 
-export class CreateVendorDto {
+export class CreateInventoryVendorDto {
   @ApiProperty({ example: 'ABC Supplies' })
   @IsString()
   @IsNotEmpty()
@@ -117,7 +117,7 @@ export class CreateVendorDto {
   isActive?: boolean;
 }
 
-export class UpdateVendorDto extends CreateVendorDto {}
+export class UpdateInventoryVendorDto extends CreateInventoryVendorDto {}
 
 export class CreateItemDto {
   @ApiProperty({ example: 'LAP-001' })
