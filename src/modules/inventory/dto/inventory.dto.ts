@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
@@ -235,10 +235,14 @@ export class CreatePurchaseRequestDto {
   @MaxLength(512)
   remarks?: string;
 
-  @ApiProperty({ type: [InventoryLineDto] })
+  @ApiProperty({
+    type: [InventoryLineDto],
+    description: 'Multiple PR line items. Also accepts `items` as a backward-compatible alias.',
+  })
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })
+  @Transform(({ value, obj }) => value ?? obj?.items, { toClassOnly: true })
   @Type(() => InventoryLineDto)
   lines: InventoryLineDto[];
 }
@@ -484,4 +488,31 @@ export class InventoryStatusPatchDto {
   @IsString()
   @IsIn(['DRAFT', 'APPROVED', 'REJECTED', 'CONFIRMED'])
   status: 'DRAFT' | 'APPROVED' | 'REJECTED' | 'CONFIRMED';
+}
+
+export class ItemWorkflowSummaryQueryDto {
+  @ApiPropertyOptional({ example: 12 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  itemId?: number;
+
+  @ApiPropertyOptional({
+    enum: ['ISSUANCE_MADE', 'GRN_MADE', 'ORDER_MADE', 'REQUEST_RECEIVED', 'NONE'],
+  })
+  @IsOptional()
+  @IsString()
+  @IsIn(['ISSUANCE_MADE', 'GRN_MADE', 'ORDER_MADE', 'REQUEST_RECEIVED', 'NONE'])
+  status?: 'ISSUANCE_MADE' | 'GRN_MADE' | 'ORDER_MADE' | 'REQUEST_RECEIVED' | 'NONE';
+
+  @ApiPropertyOptional({ example: '2026-05-01' })
+  @IsOptional()
+  @IsDateString()
+  from?: string;
+
+  @ApiPropertyOptional({ example: '2026-05-31' })
+  @IsOptional()
+  @IsDateString()
+  to?: string;
 }

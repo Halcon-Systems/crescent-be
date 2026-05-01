@@ -14,7 +14,7 @@ import { ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestj
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RequirePermissions } from '../../common/rbac/require-permissions.decorator';
 import { JWT_AUTH_BEARER } from '../../swagger/openapi-document.builder';
-import { CreateItemDto, UpdateItemDto } from './dto/inventory.dto';
+import { CreateItemDto, ItemWorkflowSummaryQueryDto, UpdateItemDto } from './dto/inventory.dto';
 import { PermissionsGuard } from '../rbac/permissions.guard';
 import { InventoryService } from './inventory.service';
 
@@ -51,6 +51,17 @@ export class InventoryItemsController {
   @ApiParam({ name: 'sku' })
   bySku(@Param('sku') sku: string) {
     return this.inventory.getItemBySku(sku);
+  }
+
+  @Get('workflow-summary')
+  @RequirePermissions('inventory.items.view')
+  @ApiOperation({ summary: 'List items with PR/PO/GRN/Issuance workflow entries' })
+  @ApiQuery({ name: 'itemId', required: false, type: Number })
+  @ApiQuery({ name: 'status', required: false, enum: ['ISSUANCE_MADE', 'GRN_MADE', 'ORDER_MADE', 'REQUEST_RECEIVED', 'NONE'] })
+  @ApiQuery({ name: 'from', required: false, type: String, description: 'ISO date, e.g. 2026-05-01' })
+  @ApiQuery({ name: 'to', required: false, type: String, description: 'ISO date, e.g. 2026-05-31' })
+  workflowSummary(@Query() query: ItemWorkflowSummaryQueryDto) {
+    return this.inventory.listItemsWorkflowSummary(query);
   }
 
   @Get(':id')

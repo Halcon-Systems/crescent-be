@@ -22,6 +22,7 @@ import {
   CreateStoreDto,
   CreateTransferDto,
   CreateInventoryVendorDto,
+  ItemWorkflowSummaryQueryDto,
   InventoryCardQueryDto,
   ReportQueryDto,
   UpdateCategoryDto,
@@ -40,6 +41,43 @@ import {
 @Injectable()
 export class InventoryService {
   constructor(private readonly prisma: PrismaService) {}
+
+  private async buildItemWorkflowStatusMap(
+    itemIds: number[],
+    createdAtFilter?: { gte?: Date; lte?: Date },
+  ) {
+    const ids = Array.from(new Set(itemIds.filter((id) => Number.isInteger(id) && id > 0)));
+    if (!ids.length) return new Map<number, string>();
+
+    const [prLines, poLines, grnLines, issuanceLines] = await Promise.all([
+      this.prisma.invPurchaseRequestLine.groupBy({ by: ['itemId'], where: { itemId: { in: ids }, createdAt: createdAtFilter } }),
+      this.prisma.invPurchaseOrderLine.groupBy({ by: ['itemId'], where: { itemId: { in: ids }, createdAt: createdAtFilter } }),
+      this.prisma.invGrnLine.groupBy({ by: ['itemId'], where: { itemId: { in: ids }, createdAt: createdAtFilter } }),
+      this.prisma.invIssuanceLine.groupBy({ by: ['itemId'], where: { itemId: { in: ids }, createdAt: createdAtFilter } }),
+    ]);
+
+    const hasPr = new Set(prLines.map((x) => x.itemId));
+    const hasPo = new Set(poLines.map((x) => x.itemId));
+    const hasGrn = new Set(grnLines.map((x) => x.itemId));
+    const hasIssuance = new Set(issuanceLines.map((x) => x.itemId));
+
+    const map = new Map<number, string>();
+    for (const itemId of ids) {
+      if (hasIssuance.has(itemId)) map.set(itemId, 'ISSUANCE_MADE');
+      else if (hasGrn.has(itemId)) map.set(itemId, 'GRN_MADE');
+      else if (hasPo.has(itemId)) map.set(itemId, 'ORDER_MADE');
+      else if (hasPr.has(itemId)) map.set(itemId, 'REQUEST_RECEIVED');
+      else map.set(itemId, 'NONE');
+    }
+    return map;
+  }
+
+  private withItemStatus<T extends { itemId: number }>(item: T, statusMap: Map<number, string>) {
+    return {
+      ...item,
+      status: statusMap.get(item.itemId) ?? 'NONE',
+    };
+  }
 
   private resolvePoUnitPrice(line: { qty: number; unitPrice?: number; totalPrice?: number }): number | undefined {
     if (typeof line.unitPrice === 'number') return line.unitPrice;
@@ -286,6 +324,9 @@ export class InventoryService {
     return this.prisma.invItem.findMany({
       orderBy: { itemId: 'asc' },
       include: { category: true, group: true, defaultStore: true },
+    }).then(async (rows) => {
+      const statusMap = await this.buildItemWorkflowStatusMap(rows.map((r) => r.itemId));
+      return rows.map((row) => this.withItemStatus(row, statusMap));
     });
   }
   async getItem(itemId: number) {
@@ -294,12 +335,17 @@ export class InventoryService {
       include: { category: true, group: true, defaultStore: true },
     });
     if (!row) throw new NotFoundException(`Item ${itemId} not found`);
-    return row;
+    const statusMap = await this.buildItemWorkflowStatusMap([row.itemId]);
+    return this.withItemStatus(row, statusMap);
   }
   async getItemBySku(sku: string) {
-    const row = await this.prisma.invItem.findUnique({ where: { sku } });
+    const row = await this.prisma.invItem.findUnique({
+      where: { sku },
+      include: { category: true, group: true, defaultStore: true },
+    });
     if (!row) throw new NotFoundException(`Item with SKU ${sku} not found`);
-    return row;
+    const statusMap = await this.buildItemWorkflowStatusMap([row.itemId]);
+    return this.withItemStatus(row, statusMap);
   }
   searchItems(q?: string) {
     return this.prisma.invItem.findMany({
@@ -312,7 +358,163 @@ export class InventoryService {
           }
         : undefined,
       orderBy: { itemId: 'asc' },
+      include: { category: true, group: true, defaultStore: true },
+    }).then(async (rows) => {
+      const statusMap = await this.buildItemWorkflowStatusMap(rows.map((r) => r.itemId));
+      return rows.map((row) => this.withItemStatus(row, statusMap));
     });
+  }
+
+  async listItemsWorkflowSummary(query?: ItemWorkflowSummaryQueryDto) {
+    const createdAtFilter =
+      query?.from || query?.to
+        ? {
+            gte: query?.from ? new Date(query.from) : undefined,
+            lte: query?.to ? new Date(query.to) : undefined,
+          }
+        : undefined;
+
+    const items = await this.prisma.invItem.findMany({
+      where: query?.itemId ? { itemId: query.itemId } : undefined,
+      orderBy: { itemId: 'asc' },
+      include: { category: true, group: true, defaultStore: true },
+    });
+    const itemIds = items.map((x) => x.itemId);
+    const statusMap = await this.buildItemWorkflowStatusMap(itemIds, createdAtFilter);
+
+    const [prLines, poLines, grnLines, issuanceLines] = await Promise.all([
+      this.prisma.invPurchaseRequestLine.findMany({
+        where: { itemId: { in: itemIds }, createdAt: createdAtFilter },
+        include: {
+          purchaseRequest: {
+            select: {
+              purchaseRequestId: true,
+              requestNo: true,
+              status: true,
+              officeId: true,
+              storeId: true,
+              createdAt: true,
+            },
+          },
+        },
+        orderBy: { purchaseRequestLineId: 'desc' },
+      }),
+      this.prisma.invPurchaseOrderLine.findMany({
+        where: { itemId: { in: itemIds }, createdAt: createdAtFilter },
+        include: {
+          purchaseOrder: {
+            select: {
+              purchaseOrderId: true,
+              poNo: true,
+              status: true,
+              vendorId: true,
+              storeId: true,
+              createdAt: true,
+            },
+          },
+        },
+        orderBy: { purchaseOrderLineId: 'desc' },
+      }),
+      this.prisma.invGrnLine.findMany({
+        where: { itemId: { in: itemIds }, createdAt: createdAtFilter },
+        include: {
+          grn: {
+            select: {
+              grnId: true,
+              grnNo: true,
+              status: true,
+              storeId: true,
+              purchaseOrderId: true,
+              createdAt: true,
+            },
+          },
+        },
+        orderBy: { grnLineId: 'desc' },
+      }),
+      this.prisma.invIssuanceLine.findMany({
+        where: { itemId: { in: itemIds }, createdAt: createdAtFilter },
+        include: {
+          issuance: {
+            select: {
+              issuanceId: true,
+              issuanceNo: true,
+              storeId: true,
+              createdAt: true,
+            },
+          },
+        },
+        orderBy: { issuanceLineId: 'desc' },
+      }),
+    ]);
+
+    const prByItem = new Map<number, Array<Record<string, unknown>>>();
+    for (const line of prLines) {
+      const list = prByItem.get(line.itemId) ?? [];
+      list.push({
+        purchaseRequestLineId: line.purchaseRequestLineId,
+        purchaseRequestId: line.purchaseRequestId,
+        qty: line.qty,
+        note: line.note,
+        createdAt: line.createdAt,
+        purchaseRequest: line.purchaseRequest,
+      });
+      prByItem.set(line.itemId, list);
+    }
+
+    const poByItem = new Map<number, Array<Record<string, unknown>>>();
+    for (const line of poLines) {
+      const list = poByItem.get(line.itemId) ?? [];
+      list.push({
+        purchaseOrderLineId: line.purchaseOrderLineId,
+        purchaseOrderId: line.purchaseOrderId,
+        qty: line.qty,
+        unitPrice: line.unitPrice,
+        note: line.note,
+        createdAt: line.createdAt,
+        purchaseOrder: line.purchaseOrder,
+      });
+      poByItem.set(line.itemId, list);
+    }
+
+    const grnByItem = new Map<number, Array<Record<string, unknown>>>();
+    for (const line of grnLines) {
+      const list = grnByItem.get(line.itemId) ?? [];
+      list.push({
+        grnLineId: line.grnLineId,
+        grnId: line.grnId,
+        qtyReceived: line.qtyReceived,
+        note: line.note,
+        createdAt: line.createdAt,
+        grn: line.grn,
+      });
+      grnByItem.set(line.itemId, list);
+    }
+
+    const issuanceByItem = new Map<number, Array<Record<string, unknown>>>();
+    for (const line of issuanceLines) {
+      const list = issuanceByItem.get(line.itemId) ?? [];
+      list.push({
+        issuanceLineId: line.issuanceLineId,
+        issuanceId: line.issuanceId,
+        qty: line.qty,
+        note: line.note,
+        createdAt: line.createdAt,
+        issuance: line.issuance,
+      });
+      issuanceByItem.set(line.itemId, list);
+    }
+
+    const result = items.map((item) => ({
+      ...item,
+      status: statusMap.get(item.itemId) ?? 'NONE',
+      entries: {
+        purchaseRequests: prByItem.get(item.itemId) ?? [],
+        purchaseOrders: poByItem.get(item.itemId) ?? [],
+        grns: grnByItem.get(item.itemId) ?? [],
+        issuances: issuanceByItem.get(item.itemId) ?? [],
+      },
+    }));
+    return query?.status ? result.filter((x) => x.status === query.status) : result;
   }
   async updateItem(itemId: number, dto: UpdateItemDto) {
     await this.getItem(itemId);
